@@ -127,7 +127,7 @@ Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigu
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.round(Math.min(1920, Math.max(160, view.clientWidth * dpr)));
     const h = Math.round(Math.min(1920, Math.max(120, view.clientHeight * dpr)));
-    return { w, h, z: prefs.zoom };
+    return { w, h, z: prefs.zoom, v: 2 };   // v 2 = Bildkopf mit Größe/Qualität/Stufe (20 Bytes)
   }
   function syncStream() {
     const want = active() && conn.tunneled;
@@ -149,7 +149,9 @@ Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigu
     const gap = lastFrameAt ? now - lastFrameAt : 0;
     if (gap > 1000) stalls++;
     lastFrameAt = now;
-    const head = buf.byteLength >= 20 ? 20 : 12;
+    // Das JPEG beginnt mit FF D8 – daran erkennen, ob der Kopf 20 oder (ältere PC-Version) 12 Bytes lang ist.
+    const u8 = new Uint8Array(buf);
+    const head = buf.byteLength > 21 && u8[20] === 0xFF && u8[21] === 0xD8 ? 20 : 12;
     const blob = new Blob([new Uint8Array(buf, head)], { type: 'image/jpeg' });
     samples.push({ at: now, gap, kb: blob.size / 1024, pcMs: dv.getUint16(10) });
     if (head === 20) quality = { w: dv.getUint16(12), h: dv.getUint16(14), q: dv.getUint8(16), level: dv.getUint8(17), ack: dv.getUint16(18) };
