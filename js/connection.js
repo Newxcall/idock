@@ -146,6 +146,7 @@ export class Connection extends EventTarget {
       if (msg.t === 'hello') {
         this.retry = 0;
         if (!viaInternet) this.lanFailed = false;
+        if (ws instanceof RemoteSocket) ws.fastOk = true; // angemeldet → Mausbewegungen über den schnellen Kanal
         this.lastDiag = '';
         this.onlineSince = Date.now();
         this.info = { pc: msg.pc, device: msg.device, version: msg.version, build: msg.build, remote: !!msg.remote, pages: msg.pages || '' };

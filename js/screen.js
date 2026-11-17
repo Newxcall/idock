@@ -68,28 +68,34 @@ export function initScreen({ panel, conn }) {
     renderChips();
   });
 
-  async function loop() {
-    if (running) return;
-    running = true;
-    try {
-      while (active()) {
-        const t0 = performance.now();
-        try {
-          const dpr = Math.min(window.devicePixelRatio || 1, 2);
-          const w = Math.round(Math.min(2560, Math.max(160, view.clientWidth * dpr)));
-          const h = Math.round(Math.min(2560, Math.max(120, view.clientHeight * dpr)));
-          // Unterwegs (Fernzugriff) etwas kleinere, stärker komprimierte Bilder – die Leitung ist meist langsamer.
-          const q = conn.tunneled ? 50 : 60;
-          const res = await conn.apiFetch(`api/screen/frame?t=${token()}&w=${w}&h=${h}&z=${prefs.zoom}&q=${q}`, { cache: 'no-store' });
-          if (res.status === 401) { setMsg('Nicht angemeldet.'); break; }
-          if (!res.ok) {
-            setMsg('Der Bildschirm ist gerade gesperrt oder geschützt (z. B. Sperrbildschirm oder Windows-Sicherheitsabfrage).');
-            await sleep(1000);
-            continue;
-          }
-          const idx = +(res.headers.get('X-Screen-Index') ?? 0);
-          const count = +(res.headers.get('X-Screen-Count') ?? 1);
-          const blob = await res.blob();
+  // Neuestes angezeigtes Bild (über das Internet laufen zwei Abrufe gleichzeitig – ein älteres Bild, das später
+  // ankommt, wird nicht mehr gezeigt).
+  let seq = 0;
+  let shownSeq = 0;
+
+  async function worker(depth) {
+    const minGap = (1000 / MAX_FPS) * depth;
+    while (active()) {
+      const t0 = performance.now();
+      const mine = ++seq;
+      try {
+        // Über das Internet: einfache statt doppelte Pixeldichte und stärker komprimiert – etwa ein Viertel der Daten.
+        const dpr = conn.tunneled ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+        const w = Math.round(Math.min(2560, Math.max(160, view.clientWidth * dpr)));
+        const h = Math.round(Math.min(2560, Math.max(120, view.clientHeight * dpr)));
+        const q = conn.tunneled ? 45 : 60;
+        const res = await conn.apiFetch(`api/screen/frame?t=${token()}&w=${w}&h=${h}&z=${prefs.zoom}&q=${q}`, { cache: 'no-store' });
+        if (res.status === 401) { setMsg('Nicht angemeldet.'); return; }
+        if (!res.ok) {
+          setMsg('Der Bildschirm ist gerade gesperrt oder geschützt (z. B. Sperrbildschirm oder Windows-Sicherheitsabfrage).');
+          await sleep(1000);
+          continue;
+        }
+        const idx = +(res.headers.get('X-Screen-Index') ?? 0);
+        const count = +(res.headers.get('X-Screen-Count') ?? 1);
+        const blob = await res.blob();
+        if (mine > shownSeq) {
+          shownSeq = mine;
           const url = URL.createObjectURL(blob);
           await new Promise((resolve) => { img.onload = img.onerror = resolve; img.src = url; });
           if (prevUrl) URL.revokeObjectURL(prevUrl);
@@ -98,12 +104,24 @@ export function initScreen({ panel, conn }) {
           setMsg('');
           if (count !== screens.length) conn.send({ t: 'screen.list' });
           if (idx !== current) { current = idx; render(); }
-        } catch {
-          await sleep(800); // Verbindung kurz weg → gleich wieder versuchen
         }
-        const wait = 1000 / MAX_FPS - (performance.now() - t0);
-        if (wait > 0) await sleep(wait);
+      } catch {
+        await sleep(800); // Verbindung kurz weg → gleich wieder versuchen
       }
+      const wait = minGap - (performance.now() - t0);
+      if (wait > 0) await sleep(wait);
+    }
+  }
+
+  async function loop() {
+    if (running) return;
+    running = true;
+    try {
+      // Über das Internet zwei Bilder gleichzeitig anfordern: Die Wartezeit auf die Antwort überlappt dann.
+      const depth = conn.tunneled ? 2 : 1;
+      const workers = [worker(depth)];
+      if (depth > 1) workers.push(sleep(60).then(() => worker(depth)));
+      await Promise.all(workers);
     } finally {
       running = false;
     }

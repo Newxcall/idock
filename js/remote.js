@@ -166,6 +166,10 @@ export class RemoteSocket {
       this.onopen && this.onopen();
     };
     dc.onmessage = (e) => this.onmessage && this.onmessage({ data: e.data });
+    // Ungeordneter Zusatzkanal nur für Mausbewegungen/Scrollen: Ein verlorenes Paket hält die folgenden nicht auf.
+    // Erst nach der Anmeldung benutzen (fastOk), sonst hält der PC die Bewegung für einen Anmeldeversuch.
+    this.fastOk = false;
+    try { this.fast = pc.createDataChannel('idock-fast', { ordered: false }); } catch { this.fast = null; }
     dc.onclose = () => this.fail('closed');
     pc.onicecandidate = (e) => {
       if (!e.candidate) return;
@@ -211,7 +215,10 @@ export class RemoteSocket {
   }
 
   send(text) {
-    if (this.readyState === 1 && this.dc && this.dc.readyState === 'open') this.dc.send(text);
+    if (this.readyState !== 1) return;
+    if (this.fastOk && this.fast && this.fast.readyState === 'open' && this.fast.bufferedAmount < 4096
+      && (text.startsWith('{"t":"m",') || text.startsWith('{"t":"scroll",'))) { this.fast.send(text); return; }
+    if (this.dc && this.dc.readyState === 'open') this.dc.send(text);
   }
 
   /** Wie viele Bytes noch auf dem Weg sind (für Gegendruck bei großen Uploads). */
@@ -235,6 +242,7 @@ export class RemoteSocket {
     clearTimeout(this.timer);
     if (this.signal) { this.signal.close(); this.signal = null; }
     if (this.dc) { this.dc.onclose = this.dc.onmessage = this.dc.onopen = null; try { this.dc.close(); } catch { } }
+    if (this.fast) { try { this.fast.close(); } catch { } this.fast = null; }
     if (this.pc) { this.pc.onconnectionstatechange = this.pc.onicecandidate = null; try { this.pc.close(); } catch { } }
     this.onclose && this.onclose({ reason: this.lastError });
   }
