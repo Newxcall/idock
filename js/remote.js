@@ -13,6 +13,15 @@ const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudfl
 const CONNECT_TIMEOUT_MS = 15000;
 const REMOTE_KEY = 'idock.remote';
 
+/** Art eines Verbindungswegs (ICE-Kandidat) ohne die Adresse selbst: host4/host6/host-mdns/srflx4/srflx6/relay. */
+function candidateKind(line) {
+  const m = /typ (\w+)/.exec(line || '');
+  const type = m ? m[1] : '?';
+  const addr = (line || '').split(' ')[4] || '';
+  const fam = addr.endsWith('.local') ? '-mdns' : addr.includes(':') ? '6' : '4';
+  return type + fam;
+}
+
 /** Soll die Seite den Fernzugriff verwenden? (?remote=1 schaltet ihn für Tests ein, ?remote=0 aus) */
 export function isRemoteMode() {
   const q = new URLSearchParams(location.search).get('remote');
@@ -126,6 +135,11 @@ export class RemoteSocket {
     this.remoteIce = [];
     this.localIce = [];
     this.offerSent = false;
+    // Für die Fehlersuche: Hat der PC geantwortet? Welche Verbindungswege gab es?
+    this.gotAnswer = false;
+    this.localKinds = new Set();
+    this.remoteKinds = new Set();
+    this.iceState = 'new';
     this.timer = setTimeout(() => this.fail('timeout'), CONNECT_TIMEOUT_MS);
     this.start().catch((e) => this.fail(e && e.message));
   }
@@ -155,10 +169,12 @@ export class RemoteSocket {
     dc.onclose = () => this.fail('closed');
     pc.onicecandidate = (e) => {
       if (!e.candidate) return;
+      this.localKinds.add(candidateKind(e.candidate.candidate));
       const d = JSON.stringify(e.candidate.toJSON());
       if (this.offerSent) this.signal && this.signal.broadcast('sig', this.sign('ice', d));
       else this.localIce.push(d);
     };
+    pc.oniceconnectionstatechange = () => { this.iceState = pc.iceConnectionState; };
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') this.fail(pc.connectionState);
     };
@@ -177,11 +193,14 @@ export class RemoteSocket {
     if (!pc) return;
     try {
       if (p.k === 'answer' && !pc.currentRemoteDescription) {
+        this.gotAnswer = true;
+        for (const line of p.d.split(/\r?\n/)) if (line.startsWith('a=candidate:')) this.remoteKinds.add(candidateKind(line));
         await pc.setRemoteDescription({ type: 'answer', sdp: p.d });
         for (const c of this.remoteIce.splice(0)) await pc.addIceCandidate(c).catch(() => { });
       } else if (p.k === 'ice') {
         const c = JSON.parse(p.d);
         if (!c.candidate) return;
+        this.remoteKinds.add(candidateKind(c.candidate));
         if (c.sdpMid == null && c.sdpMLineIndex == null) c.sdpMLineIndex = 0;
         if (pc.currentRemoteDescription) await pc.addIceCandidate(c).catch(() => { });
         else this.remoteIce.push(c);
@@ -197,6 +216,12 @@ export class RemoteSocket {
 
   /** Wie viele Bytes noch auf dem Weg sind (für Gegendruck bei großen Uploads). */
   get bufferedAmount() { return this.dc ? this.dc.bufferedAmount : 0; }
+
+  /** Kurzbeschreibung für die Fehlersuche, z. B. „PC antwortet · iPhone: srflx4, host-mdns · PC: host6, srflx4 · ICE failed“. */
+  get diag() {
+    const list = (s) => [...s].sort().join(', ') || '–';
+    return `${this.gotAnswer ? 'PC antwortet' : 'keine Antwort'} · iPhone: ${list(this.localKinds)} · PC: ${list(this.remoteKinds)} · ICE ${this.iceState} · ${this.lastError || ''}`;
+  }
 
   fail(reason) {
     if (this.readyState === 3) return;

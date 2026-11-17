@@ -88,6 +88,7 @@ export class Connection extends EventTarget {
       const finish = (result) => {
         if (done) return;
         done = true;
+        if (!result.ok) { result.diag = sock.diag; if (sock.gotAnswer && result.error === 'notfound') result.error = 'nodirect'; }
         clearTimeout(timer);
         sock.onclose = null;
         try { sock.close(); } catch { }
@@ -144,6 +145,7 @@ export class Connection extends EventTarget {
       if (msg.t === 'hello') {
         this.retry = 0;
         if (!viaInternet) this.lanFailed = false;
+        this.lastDiag = '';
         this.info = { pc: msg.pc, device: msg.device, version: msg.version, build: msg.build, remote: !!msg.remote, pages: msg.pages || '' };
         this.startHeartbeat();
         this.setState('online', this.info);
@@ -157,6 +159,7 @@ export class Connection extends EventTarget {
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
+      if (ws instanceof RemoteSocket && !opened) this.lastDiag = ws.diag;
       if (!viaInternet && !opened) { this.lanFailed = true; this.retry = 0; }   // WLAN nicht erreichbar
       else if (viaInternet && !this.remote) this.lanFailed = false;             // nächstes Mal wieder zuerst WLAN
       this.drop();

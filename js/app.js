@@ -94,6 +94,7 @@ async function doPair() {
   pairing = true;
   renderPin();
   setPairMsg(conn.remote ? 'Suche deinen PC über das Internet …' : 'Verbinde …');
+  $('#pair-diag').textContent = '';
   const r = await conn.pair(pinInput.value, deviceName(), codeInput.value);
   pairing = false;
   if (r.ok) {
@@ -103,12 +104,14 @@ async function doPair() {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     return; // der Statuswechsel zeigt den Hauptbildschirm
   }
+  $('#pair-diag').textContent = r.diag ? 'Technik: ' + r.diag : '';
   if (r.error === 'code' || r.error === 'notfound') codeInput.classList.add('error');
   else pinBoxes.classList.add('error');
   if (r.error === 'wrong') setPairMsg(`Falsche PIN. Noch ${r.attemptsLeft} Versuch(e).`, true);
   else if (r.error === 'locked') setPairMsg(`Zu viele Versuche. Bitte ${r.seconds} s warten.`, true);
   else if (r.error === 'network') setPairMsg('PC nicht erreichbar. Läuft iDock am PC?', true);
   else if (r.error === 'code') setPairMsg('Der Kopplungscode hat 12 Zeichen (z. B. K7Q2-9XMP-4ZRT).', true);
+  else if (r.error === 'nodirect') setPairMsg('PC gefunden, aber über dieses Netz kommt keine direkte Verbindung zustande. Bitte mach ein Bildschirmfoto davon.', true);
   else if (r.error === 'notfound') setPairMsg('PC nicht gefunden. Stimmt der Kopplungscode? Läuft iDock am PC mit Häkchen „Auch unterwegs verbinden“?', true);
   else setPairMsg('Das hat nicht geklappt. Bitte noch einmal.', true);
   setTimeout(() => { pinInput.value = ''; renderPin(); }, 600);
@@ -174,6 +177,7 @@ conn.addEventListener('state', (e) => {
     $('#home-sub').textContent = conn.remote
       ? 'Läuft iDock am PC und ist der PC mit dem Internet verbunden?'
       : 'Läuft iDock am PC? Sind iPhone und PC im selben WLAN?';
+    if (conn.lastDiag) $('#home-sub').textContent += ' (Technik: ' + conn.lastDiag + ')';
     let left = Math.ceil(delay / 1000);
     const txt = $('#offline-text');
     const tick = () => { txt.textContent = left > 0 ? `Getrennt – neuer Versuch in ${left} s` : 'Verbinde neu …'; left--; };
@@ -337,6 +341,13 @@ $('#update-btn').addEventListener('click', async () => {
 
 // Seite aus dem Internet (GitHub Pages): für den Start ohne Netz zwischenspeichern.
 if (remoteOnly() && 'serviceWorker' in navigator) {
+  // Neue Version im Offline-Speicher übernommen → einmal neu laden, damit alle Dateien zusammenpassen.
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;
+    try { if (sessionStorage.getItem('idock.swReload') === PAGE_BUILD) return; sessionStorage.setItem('idock.swReload', PAGE_BUILD); } catch { }
+    location.reload();
+  });
   navigator.serviceWorker.register('sw.js').catch(() => { });
 }
 $('#forget-btn').addEventListener('click', () => {
