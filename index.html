@@ -10,12 +10,12 @@
   <meta name="theme-color" content="#000000">
   <meta name="format-detection" content="telephone=no">
   <meta name="idock-hosted" content="1">
-  <meta name="idock-build" content="d3b6c4ff19">
+  <meta name="idock-build" content="14f8e06c8a">
   <title>iDock</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/png" href="icon-32.png">
-  <link rel="stylesheet" href="css/app.css?v=d3b6c4ff19">
+  <link rel="stylesheet" href="css/app.css?v=14f8e06c8a">
 </head>
 <body>
 
@@ -65,7 +65,8 @@
     </header>
 
     <div id="offline-banner" class="banner" hidden>
-      <span id="offline-text">Verbindung unterbrochen – verbinde neu …</span>
+      <span class="offline-texts"><span id="offline-text">Verbindung unterbrochen – verbinde neu …</span>
+        <small id="offline-diag" class="offline-diag"></small></span>
       <button id="reconnect-btn" class="btn small">Jetzt</button>
     </div>
 
@@ -311,7 +312,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="js/app.js?v=d3b6c4ff19"></script>
+  <script type="module" src="js/app.js?v=14f8e06c8a"></script>
   <div id="boot-fail" class="boot-fail" hidden>
     <p><b>iDock startet nicht.</b></p>
     <p id="boot-err" class="dim"></p>

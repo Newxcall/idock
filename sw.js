@@ -1,10 +1,10 @@
 // iDock Service Worker – erzeugt von PagesExporter, nicht von Hand ändern.
 // Speichert die Seite für den Start ohne Netz. Neue Version = neuer Fingerabdruck = neuer Zwischenspeicher.
-const CACHE = 'idock-d3b6c4ff19';
+const CACHE = 'idock-14f8e06c8a';
 const FILES = [
   './',
-  'css/app.css?v=d3b6c4ff19',
-  'js/app.js?v=d3b6c4ff19',
+  'css/app.css?v=14f8e06c8a',
+  'js/app.js?v=14f8e06c8a',
   'js/clipboard.js',
   'js/connection.js',
   'js/dock.js',

@@ -178,6 +178,7 @@ conn.addEventListener('state', (e) => {
       ? 'Läuft iDock am PC und ist der PC mit dem Internet verbunden?'
       : 'Läuft iDock am PC? Sind iPhone und PC im selben WLAN?';
     if (conn.lastDiag) $('#home-sub').textContent += ' (Technik: ' + conn.lastDiag + ')';
+    $('#offline-diag').textContent = conn.lastDiag ? 'Technik: ' + conn.lastDiag : '';
     let left = Math.ceil(delay / 1000);
     const txt = $('#offline-text');
     const tick = () => { txt.textContent = left > 0 ? `Getrennt – neuer Versuch in ${left} s` : 'Verbinde neu …'; left--; };

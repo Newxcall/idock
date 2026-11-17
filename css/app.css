@@ -85,6 +85,9 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 }
 .code-row input:focus { border-color: var(--accent); }
 .code-row input.error { border-color: var(--bad); animation: shake .35s; }
+.offline-texts { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.offline-diag { font-size: 11px; opacity: .75; word-break: break-word; }
+.offline-diag:empty { display: none; }
 .pair-diag { font-size: 11px; margin: -6px 0 10px; text-align: center; word-break: break-word; }
 .pair-diag:empty { display: none; }
 .pair-msg { min-height: 1.4em; margin: 14px 0 6px !important; color: var(--dim); font-size: 15px; }

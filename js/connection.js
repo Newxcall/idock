@@ -6,6 +6,7 @@ import { RemoteSocket, isRemoteMode, normalizeCode } from './remote.js';
 const TOKEN_KEY = 'idock.token';
 const HEARTBEAT_MS = 2000;   // alle 2 s ein "ping"
 const DEAD_AFTER_MS = 6000;  // 6 s ohne "pong" → Verbindung gilt als tot
+const DEAD_AFTER_NET_MS = 12000; // über das Internet (Mobilfunk) mehr Geduld
 const MAX_DELAY_MS = 5000;   // spätestens alle 5 s neuer Versuch
 const TUNNEL_TIMEOUT_MS = 20000;
 const BODY_CHUNK = 12 * 1024;
@@ -146,6 +147,7 @@ export class Connection extends EventTarget {
         this.retry = 0;
         if (!viaInternet) this.lanFailed = false;
         this.lastDiag = '';
+        this.onlineSince = Date.now();
         this.info = { pc: msg.pc, device: msg.device, version: msg.version, build: msg.build, remote: !!msg.remote, pages: msg.pages || '' };
         this.startHeartbeat();
         this.setState('online', this.info);
@@ -159,7 +161,9 @@ export class Connection extends EventTarget {
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
-      if (ws instanceof RemoteSocket && !opened) this.lastDiag = ws.diag;
+      if (ws instanceof RemoteSocket) this.lastDiag = opened
+        ? `Leitung abgebrochen nach ${Math.round((Date.now() - (this.onlineSince || Date.now())) / 1000)} s (${ws.lastError || '?'})`
+        : ws.diag;
       if (!viaInternet && !opened) { this.lanFailed = true; this.retry = 0; }   // WLAN nicht erreichbar
       else if (viaInternet && !this.remote) this.lanFailed = false;             // nächstes Mal wieder zuerst WLAN
       this.drop();
@@ -208,7 +212,11 @@ export class Connection extends EventTarget {
     this.stopHeartbeat();
     this.lastPong = Date.now();
     this.heartbeat = setInterval(() => {
-      if (Date.now() - this.lastPong > DEAD_AFTER_MS) { this.drop(); return; }
+      if (Date.now() - this.lastPong > (this.tunneled ? DEAD_AFTER_NET_MS : DEAD_AFTER_MS)) {
+        this.lastDiag = 'keine Antwort vom PC (Herzschlag) nach ' + Math.round((Date.now() - this.onlineSince) / 1000) + ' s';
+        this.drop();
+        return;
+      }
       this.send({ t: 'ping' });
     }, HEARTBEAT_MS);
   }
