@@ -93,7 +93,8 @@ export function initScreen({ panel, conn }) {
         let kbps = 0;
         if (vPrev && now > vPrev.t) kbps = (s.bytesReceived - vPrev.b) * 8 / (now - vPrev.t);
         const bufMs = s.jitterBufferEmittedCount ? 1000 * s.jitterBufferDelay / s.jitterBufferEmittedCount : 0;
-        vin = { fps: s.framesPerSecond || 0, w: s.frameWidth || 0, h: s.frameHeight || 0, kbps, lost: s.packetsLost || 0, dropped: s.framesDropped || 0, buf: bufMs, pli: s.pliCount || 0 };
+        vin = { fps: s.framesPerSecond || 0, w: s.frameWidth || 0, h: s.frameHeight || 0, kbps, lost: s.packetsLost || 0, dropped: s.framesDropped || 0, buf: bufMs, pli: s.pliCount || 0,
+                freezes: s.freezeCount, decoded: s.framesDecoded || 0 };
         vPrev = { t: now, b: s.bytesReceived };
       });
     } catch { }
@@ -109,7 +110,7 @@ export function initScreen({ panel, conn }) {
     const max = (f) => n ? Math.max(...samples.map(f)) : 0;
     let line;
     if (videoMode()) {
-      line = vin ? `Video ${vin.fps.toFixed(0)}/s · ${vin.w}×${vin.h} · ${vin.kbps.toFixed(0)} kbit/s · verloren ${vin.lost} · Puffer ${vin.buf.toFixed(0)} ms` : 'Video startet …';
+      line = vin ? `Video ${vin.fps.toFixed(0)}/s · ${vin.w}×${vin.h} · ${vin.kbps.toFixed(0)} kbit/s · verloren ${vin.lost} · Puffer ${vin.buf.toFixed(0)} ms · verworfen ${vin.dropped}${vin.freezes != null ? ` · Hänger ${vin.freezes}` : ''}` : 'Video startet …';
       if (vstat) line += `\nPC ${vstat.fps}/s · Ziel ${vstat.target} kbit/s · Verlust ${vstat.loss} % · Schlüsselbilder ${vstat.key} (${vstat.req} erbeten) · Aufnahme ${vstat.cap} ms · Kodieren ${vstat.enc} ms`;
     } else {
       line = `Bild ${(n / 3).toFixed(1)}/s · ${avg(x => x.kb).toFixed(1)} KB · Abstand max ${max(x => x.gap).toFixed(0)} ms · PC ${avg(x => x.pcMs).toFixed(0)} ms · Hänger ${stalls}`;

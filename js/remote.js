@@ -179,7 +179,8 @@ export class RemoteSocket {
       if (vp8.length && tr.setCodecPreferences) tr.setCodecPreferences(vp8);
     } catch { }
     pc.ontrack = (e) => {
-      try { e.receiver.jitterBufferTarget = 0; } catch { }   // so wenig Verzögerung wie möglich
+      // Kleiner Puffer (80 ms) gegen die Schwankungen im Mobilfunk: flüssig geht vor „so schnell wie möglich“.
+      try { e.receiver.jitterBufferTarget = 80; } catch { }
       this.videoStream = (e.streams && e.streams[0]) || new MediaStream([e.track]);
       this.onvideo && this.onvideo();
     };
