@@ -9,6 +9,7 @@ const DEAD_AFTER_MS = 6000;  // 6 s ohne "pong" → Verbindung gilt als tot
 const MAX_DELAY_MS = 5000;   // spätestens alle 5 s neuer Versuch
 const TUNNEL_TIMEOUT_MS = 20000;
 const BODY_CHUNK = 12 * 1024;
+const LAN_TIMEOUT_MS = 3000; // so lange auf die WLAN-Verbindung warten, dann über das Internet versuchen
 
 export class Connection extends EventTarget {
   constructor() {
@@ -21,7 +22,8 @@ export class Connection extends EventTarget {
     this.heartbeat = null;
     this.lastPong = 0;
     this.handlers = new Map();
-    this.remote = isRemoteMode(); // über das Internet (WebRTC) statt direkt im WLAN
+    this.remote = isRemoteMode(); // immer über das Internet (WebRTC) statt direkt im WLAN (Einstellung)
+    this.lanFailed = false;       // WLAN-Verbindung klappt gerade nicht → über das Internet ausweichen
     this.tunnel = new Map();      // offene HTTP-Abrufe über die Verbindung (nur Fernzugriff)
     this.tunnelId = 1;
     this.imageCache = new Map();
@@ -31,6 +33,9 @@ export class Connection extends EventTarget {
     window.addEventListener('pageshow', () => this.probe());
     window.addEventListener('online', () => this.probe());
   }
+
+  /** Läuft die aktuelle Verbindung über das Internet? (Dann gehen Bilder/HTTP-Abrufe durch den Tunnel.) */
+  get tunneled() { return this.ws instanceof RemoteSocket; }
 
   get token() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }
   set token(v) {
@@ -113,16 +118,23 @@ export class Connection extends EventTarget {
     clearTimeout(this.retryTimer);
     this.setState('connecting');
 
+    // Im WLAN direkt; klappt das nicht (z. B. WLAN aus, unterwegs), automatisch über das Internet.
+    const viaInternet = this.remote || this.lanFailed;
     let ws;
-    if (this.remote) {
+    let opened = false;
+    if (viaInternet) {
       ws = new RemoteSocket(this.token);
     } else {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${proto}//${location.host}/ws`);
+      // Ohne WLAN hängt der Verbindungsaufbau sonst bis zu einer Minute.
+      setTimeout(() => {
+        if (this.ws === ws && !opened) { this.lanFailed = true; this.retry = 0; this.drop(); }
+      }, LAN_TIMEOUT_MS);
     }
     this.ws = ws;
 
-    ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token: this.token }));
+    ws.onopen = () => { opened = true; ws.send(JSON.stringify({ t: 'auth', token: this.token })); };
     ws.onmessage = (e) => {
       if (this.ws !== ws) return;
       if (typeof e.data !== 'string') { this.lastPong = Date.now(); this.tunnelChunk(e.data); return; }
@@ -131,7 +143,8 @@ export class Connection extends EventTarget {
       this.lastPong = Date.now(); // jede Nachricht zeigt: Leitung lebt
       if (msg.t === 'hello') {
         this.retry = 0;
-        this.info = { pc: msg.pc, device: msg.device, version: msg.version, build: msg.build, remote: !!msg.remote };
+        if (!viaInternet) this.lanFailed = false;
+        this.info = { pc: msg.pc, device: msg.device, version: msg.version, build: msg.build, remote: !!msg.remote, pages: msg.pages || '' };
         this.startHeartbeat();
         this.setState('online', this.info);
       } else if (msg.t === 'http_res') {
@@ -144,6 +157,8 @@ export class Connection extends EventTarget {
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
+      if (!viaInternet && !opened) { this.lanFailed = true; this.retry = 0; }   // WLAN nicht erreichbar
+      else if (viaInternet && !this.remote) this.lanFailed = false;             // nächstes Mal wieder zuerst WLAN
       this.drop();
     };
     ws.onerror = () => { };
@@ -222,13 +237,13 @@ export class Connection extends EventTarget {
    * Liefert immer ein echtes Response-Objekt (res.ok, res.json(), res.blob(), res.headers …).
    */
   apiFetch(path, init = {}) {
-    if (!this.remote) return fetch(path, init);
+    if (!this.tunneled) return fetch(path, init);
     return this.tunnelFetch(path, init);
   }
 
   /** Adresse für <img>/Hintergrund: im WLAN direkt, beim Fernzugriff als geladenes Bild (blob:). */
   async imageUrl(path) {
-    if (!this.remote) return path;
+    if (!this.tunneled) return path;
     const hit = this.imageCache.get(path);
     if (hit) return hit;
     const res = await this.tunnelFetch(path, {});

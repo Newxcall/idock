@@ -10,12 +10,12 @@
   <meta name="theme-color" content="#000000">
   <meta name="format-detection" content="telephone=no">
   <meta name="idock-hosted" content="1">
-  <meta name="idock-build" content="9bb186aac3">
+  <meta name="idock-build" content="0764317bb7">
   <title>iDock</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/png" href="icon-32.png">
-  <link rel="stylesheet" href="css/app.css?v=9bb186aac3">
+  <link rel="stylesheet" href="css/app.css?v=0764317bb7">
 </head>
 <body>
 
@@ -268,6 +268,10 @@
         <div class="row"><span>Version</span><span id="set-version" class="dim">–</span></div>
         <label class="row"><span>Über das Internet verbinden</span><input id="set-remote" type="checkbox" class="switch"></label>
       </div>
+      <a id="pages-link" class="btn wide" target="_blank" rel="noopener" hidden>iDock für unterwegs einrichten</a>
+      <p id="pages-note" class="update-note dim" hidden>Diese App kommt vom PC und startet nur im WLAN. Für unterwegs
+        (ohne WLAN) die Seite aus dem Internet öffnen, „Zum Home-Bildschirm“ hinzufügen und dort mit Kopplungscode + PIN koppeln.
+        Diese App wechselt bei WLAN-Verlust automatisch aufs Internet, solange sie offen ist.</p>
       <p id="remote-note" class="update-note dim">Fernzugriff: Die Verbindung läuft über das Internet und klappt auch unterwegs, solange die Seite offen ist. Im WLAN ist die direkte Verbindung etwas schneller.</p>
       <button id="update-btn" class="btn wide">App aktualisieren</button>
       <p class="update-note dim">Lädt die neueste Version vom PC. Normalerweise passiert das von selbst, sobald am PC eine neue iDock-Version läuft.</p>
@@ -306,6 +310,20 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="js/app.js?v=9bb186aac3"></script>
+  <script type="module" src="js/app.js?v=0764317bb7"></script>
+  <div id="boot-fail" class="boot-fail" hidden>
+    <p><b>iDock startet nicht.</b></p>
+    <p id="boot-err" class="dim"></p>
+    <button class="btn primary" onclick="location.reload()">Neu laden</button>
+  </div>
+  <script>
+    window.addEventListener('error', function (e) { window.__idockErr = (e && (e.message || (e.target && e.target.src))) || 'Fehler'; }, true);
+    setTimeout(function () {
+      if (window.idock) return;
+      var b = document.getElementById('boot-fail'); if (!b) return;
+      document.getElementById('boot-err').textContent = window.__idockErr || (navigator.onLine ? '' : 'Keine Internetverbindung.');
+      b.hidden = false;
+    }, 8000);
+  </script>
 </body>
 </html>

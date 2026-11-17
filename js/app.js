@@ -309,7 +309,11 @@ $('#settings-btn').addEventListener('click', () => {
   fillTouchpadSettings();
   $('#set-pc').textContent = conn.info.pc || '–';
   $('#set-device').textContent = conn.info.device || deviceName();
-  $('#set-host').textContent = conn.remote ? 'Internet (Fernzugriff)' : location.host;
+  $('#set-host').textContent = conn.tunneled ? 'Internet (Fernzugriff)' : location.host;
+  // WLAN-Seite vom PC: Weg zur App für unterwegs zeigen.
+  const pages = !remoteOnly() && conn.info.pages;
+  $('#pages-link').hidden = $('#pages-note').hidden = !pages;
+  if (pages) $('#pages-link').href = pages;
   $('#set-remote').checked = conn.remote;
   $('#set-remote').disabled = remoteOnly();
   $('#set-version').textContent = (conn.info.version || '–') + (PAGE_BUILD && !PAGE_BUILD.startsWith('__') ? ` (${PAGE_BUILD.slice(0, 6)})` : '');

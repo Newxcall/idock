@@ -79,7 +79,7 @@ export function initScreen({ panel, conn }) {
           const w = Math.round(Math.min(2560, Math.max(160, view.clientWidth * dpr)));
           const h = Math.round(Math.min(2560, Math.max(120, view.clientHeight * dpr)));
           // Unterwegs (Fernzugriff) etwas kleinere, stärker komprimierte Bilder – die Leitung ist meist langsamer.
-          const q = conn.remote ? 50 : 60;
+          const q = conn.tunneled ? 50 : 60;
           const res = await conn.apiFetch(`api/screen/frame?t=${token()}&w=${w}&h=${h}&z=${prefs.zoom}&q=${q}`, { cache: 'no-store' });
           if (res.status === 401) { setMsg('Nicht angemeldet.'); break; }
           if (!res.ok) {
