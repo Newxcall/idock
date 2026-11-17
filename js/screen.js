@@ -153,7 +153,8 @@ Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigu
   let streamKey = '';   // zuletzt gesendete Einstellungen ('' = Strom aus)
   function streamParams() {
     // Größe in Gerätepixeln (volle Schärfe). Wie viel davon tatsächlich kommt, passt der PC der Leitung an.
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Video: volle Pixeldichte des iPhones (3×), Einzelbilder: höchstens 2× (sonst zu groß für die Leitung).
+    const dpr = Math.min(window.devicePixelRatio || 1, wantVideo() ? 3 : 2);
     const w = Math.round(Math.min(1920, Math.max(160, view.clientWidth * dpr)));
     const h = Math.round(Math.min(1920, Math.max(120, view.clientHeight * dpr)));
     return { w, h, z: prefs.zoom, v: 2, video: wantVideo() };   // v 2 = Bildkopf mit Größe/Qualität/Stufe (20 Bytes)
