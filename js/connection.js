@@ -139,7 +139,14 @@ export class Connection extends EventTarget {
     ws.onopen = () => { opened = true; ws.send(JSON.stringify({ t: 'auth', token: this.token })); };
     ws.onmessage = (e) => {
       if (this.ws !== ws) return;
-      if (typeof e.data !== 'string') { this.lastPong = Date.now(); this.tunnelChunk(e.data); return; }
+      if (typeof e.data !== 'string') {
+        this.lastPong = Date.now();
+        // Live-Bild als Strom (Fernzugriff): beginnt mit FF FF FF FF, sonst Stück eines Tunnel-Abrufs.
+        if (e.data instanceof ArrayBuffer && e.data.byteLength >= 12 && new DataView(e.data).getUint32(0) === 0xFFFFFFFF) {
+          for (const fn of this.handlers.get('screen.frame') || []) fn({ buf: e.data });
+        } else this.tunnelChunk(e.data);
+        return;
+      }
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       this.lastPong = Date.now(); // jede Nachricht zeigt: Leitung lebt

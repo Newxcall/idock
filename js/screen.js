@@ -1,4 +1,5 @@
-// Bildschirm live im Touchpad: holt Bild für Bild vom PC (folgt dem Mauszeiger), Bildschirm wechseln, Zoom.
+// Bildschirm live im Touchpad (folgt dem Mauszeiger), Bildschirm wechseln, Zoom.
+// Im WLAN holt das iPhone Bild für Bild ab, über das Internet schickt der PC die Bilder von selbst (Strom).
 
 const PREF_KEY = 'idock.screen';
 const MAX_FPS = 20;
@@ -69,27 +70,22 @@ export function initScreen({ panel, conn }) {
     renderChips();
   });
 
-  // Neuestes angezeigtes Bild (über das Internet laufen zwei Abrufe gleichzeitig – ein älteres Bild, das später
-  // ankommt, wird nicht mehr gezeigt).
-  let seq = 0;
-  let shownSeq = 0;
-
   // Technikzeile (nur über das Internet): Messwerte der letzten 3 Sekunden + Werte vom PC.
-  let samples = [];   // { at, ms, kb, pcMs, shown }
+  let samples = [];   // { at, gap, kb, pcMs }
   let net = null;
-  let stalls = 0;     // Bilder, die länger als 1 s gebraucht haben (seit Einschalten)
+  let stalls = 0;     // Pausen > 1 s zwischen zwei Bildern (seit Einschalten)
+  let lastFrameAt = 0;
   conn.on('netstat', (m) => { net = m; });
   function updateDiag() {
     const on = active() && conn.tunneled;
     diag.hidden = !on;
     if (!on) return;
     const now = performance.now();
-    samples = samples.filter(s => now - s.at < 3000);
+    samples = samples.filter(x => now - x.at < 3000);
     const n = samples.length;
-    const avg = (f) => n ? samples.reduce((a, s) => a + f(s), 0) / n : 0;
+    const avg = (f) => n ? samples.reduce((a, x) => a + f(x), 0) / n : 0;
     const max = (f) => n ? Math.max(...samples.map(f)) : 0;
-    const shownCount = samples.filter(s => s.shown).length;
-    let line = `Bild ${(shownCount / 3).toFixed(1)}/s · ${avg(s => s.kb).toFixed(1)} KB · Abruf Ø${avg(s => s.ms).toFixed(0)} max ${max(s => s.ms).toFixed(0)} ms · PC ${avg(s => s.pcMs).toFixed(0)} ms · Hänger ${stalls}`;
+    let line = `Bild ${(n / 3).toFixed(1)}/s · ${avg(x => x.kb).toFixed(1)} KB · Abstand max ${max(x => x.gap).toFixed(0)} ms · PC ${avg(x => x.pcMs).toFixed(0)} ms · Hänger ${stalls}`;
     if (net && net.s) line += `\nLeitung ${net.s.rtt} ms · RTO ${net.s.rto} · Fenster ${net.s.cwnd} KB · offen ${net.s.outKb} KB · Wdh ${net.s.timeouts}+${net.s.fast} · ${net.path || ''}`;
     diag.textContent = line.replace(/(\d)\.(\d)/g, '$1,$2');
   }
@@ -98,64 +94,101 @@ export function initScreen({ panel, conn }) {
     if (active() && conn.tunneled) conn.send({ t: 'netstat' });
   }, 1000);
 
-  async function worker(depth) {
-    const minGap = (1000 / MAX_FPS) * depth;
-    while (active()) {
-      const t0 = performance.now();
-      const mine = ++seq;
-      try {
-        // Über das Internet: einfache statt doppelte Pixeldichte und stärker komprimiert – etwa ein Viertel der Daten.
-        const dpr = conn.tunneled ? 1 : Math.min(window.devicePixelRatio || 1, 2);
-        const w = Math.round(Math.min(2560, Math.max(160, view.clientWidth * dpr)));
-        const h = Math.round(Math.min(2560, Math.max(120, view.clientHeight * dpr)));
-        const q = conn.tunneled ? 45 : 60;
-        const res = await conn.apiFetch(`api/screen/frame?t=${token()}&w=${w}&h=${h}&z=${prefs.zoom}&q=${q}`, { cache: 'no-store' });
-        if (res.status === 401) { setMsg('Nicht angemeldet.'); return; }
-        if (!res.ok) {
-          setMsg('Der Bildschirm ist gerade gesperrt oder geschützt (z. B. Sperrbildschirm oder Windows-Sicherheitsabfrage).');
-          await sleep(1000);
-          continue;
-        }
-        const idx = +(res.headers.get('X-Screen-Index') ?? 0);
-        const count = +(res.headers.get('X-Screen-Count') ?? 1);
-        const blob = await res.blob();
-        const took = performance.now() - t0;
-        if (took > 1000) stalls++;
-        samples.push({ at: performance.now(), ms: took, kb: blob.size / 1024, pcMs: +(res.headers.get('X-Frame-Ms') ?? 0), shown: mine > shownSeq });
-        if (mine > shownSeq) {
-          shownSeq = mine;
-          const url = URL.createObjectURL(blob);
-          await new Promise((resolve) => { img.onload = img.onerror = resolve; img.src = url; });
-          if (prevUrl) URL.revokeObjectURL(prevUrl);
-          prevUrl = url;
-          if (!shown) { shown = true; view.classList.add('ready'); }
-          setMsg('');
-          if (count !== screens.length) conn.send({ t: 'screen.list' });
-          if (idx !== current) { current = idx; render(); }
-        }
-      } catch {
-        await sleep(800); // Verbindung kurz weg → gleich wieder versuchen
+  // Bild anzeigen: immer nur das neueste; während eins dekodiert wird, wartet höchstens eins.
+  let pending = null;   // { blob, idx, count }
+  let drawing = false;
+  async function show(item) {
+    pending = item;
+    if (drawing) return;
+    drawing = true;
+    try {
+      while (pending) {
+        const { blob, idx, count } = pending;
+        pending = null;
+        const url = URL.createObjectURL(blob);
+        await new Promise((resolve) => { img.onload = img.onerror = resolve; img.src = url; });
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
+        prevUrl = url;
+        if (!shown) { shown = true; view.classList.add('ready'); }
+        setMsg('');
+        if (count !== screens.length) conn.send({ t: 'screen.list' });
+        if (idx !== current) { current = idx; render(); }
       }
-      const wait = minGap - (performance.now() - t0);
-      if (wait > 0) await sleep(wait);
-    }
+    } finally { drawing = false; }
   }
 
+  // --- Über das Internet: der PC schickt die Bilder von selbst (Strom), das iPhone bestätigt jedes. ---
+  let streamKey = '';   // zuletzt gesendete Einstellungen ('' = Strom aus)
+  function streamParams() {
+    // Einfache statt doppelte Pixeldichte und stärker komprimiert – etwa ein Viertel der Daten.
+    const w = Math.round(Math.min(1920, Math.max(160, view.clientWidth)));
+    const h = Math.round(Math.min(1920, Math.max(120, view.clientHeight)));
+    return { w, h, z: prefs.zoom, q: 45 };
+  }
+  function syncStream() {
+    const want = active() && conn.tunneled;
+    if (want) {
+      const p = streamParams();
+      const key = JSON.stringify(p);
+      if (key !== streamKey) { conn.send({ t: 'screen.stream', on: true, ...p }); streamKey = key; lastFrameAt = 0; }
+    } else if (streamKey) {
+      if (conn.state === 'online') conn.send({ t: 'screen.stream', on: false });
+      streamKey = '';
+    }
+  }
+  conn.on('screen.frame', ({ buf }) => {
+    if (!streamKey) return;
+    const dv = new DataView(buf);
+    const n = dv.getUint32(4);
+    conn.send({ t: 'screen.ack', n });
+    const now = performance.now();
+    const gap = lastFrameAt ? now - lastFrameAt : 0;
+    if (gap > 1000) stalls++;
+    lastFrameAt = now;
+    const blob = new Blob([new Uint8Array(buf, 12)], { type: 'image/jpeg' });
+    samples.push({ at: now, gap, kb: blob.size / 1024, pcMs: dv.getUint16(10) });
+    show({ blob, idx: dv.getUint8(8), count: dv.getUint8(9) });
+  });
+  conn.on('screen.err', () => setMsg('Der Bildschirm ist gerade gesperrt oder geschützt (z. B. Sperrbildschirm oder Windows-Sicherheitsabfrage).'));
+
+  // --- Im WLAN: Bild für Bild abholen (dort schnell genug und einfach). ---
   async function loop() {
     if (running) return;
     running = true;
     try {
-      // Über das Internet zwei Bilder gleichzeitig anfordern: Die Wartezeit auf die Antwort überlappt dann.
-      const depth = conn.tunneled ? 2 : 1;
-      const workers = [worker(depth)];
-      if (depth > 1) workers.push(sleep(60).then(() => worker(depth)));
-      await Promise.all(workers);
+      while (active() && !conn.tunneled) {
+        const t0 = performance.now();
+        try {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const w = Math.round(Math.min(2560, Math.max(160, view.clientWidth * dpr)));
+          const h = Math.round(Math.min(2560, Math.max(120, view.clientHeight * dpr)));
+          const res = await conn.apiFetch(`api/screen/frame?t=${token()}&w=${w}&h=${h}&z=${prefs.zoom}&q=60`, { cache: 'no-store' });
+          if (res.status === 401) { setMsg('Nicht angemeldet.'); break; }
+          if (!res.ok) {
+            setMsg('Der Bildschirm ist gerade gesperrt oder geschützt (z. B. Sperrbildschirm oder Windows-Sicherheitsabfrage).');
+            await sleep(1000);
+            continue;
+          }
+          const idx = +(res.headers.get('X-Screen-Index') ?? 0);
+          const count = +(res.headers.get('X-Screen-Count') ?? 1);
+          await show({ blob: await res.blob(), idx, count });
+        } catch {
+          await sleep(800); // Verbindung kurz weg → gleich wieder versuchen
+        }
+        const wait = 1000 / MAX_FPS - (performance.now() - t0);
+        if (wait > 0) await sleep(wait);
+      }
     } finally {
       running = false;
     }
   }
 
-  const kick = () => { render(); if (active()) loop(); };
+  const kick = () => {
+    render();
+    syncStream();
+    if (active() && !conn.tunneled) loop();
+  };
+  window.addEventListener('resize', () => setTimeout(kick, 300));
 
   toggle.addEventListener('click', () => {
     prefs.on = !prefs.on;
@@ -166,13 +199,14 @@ export function initScreen({ panel, conn }) {
   zoomBtn.addEventListener('click', () => {
     prefs.zoom = prefs.zoom >= 4 ? 1 : prefs.zoom + 1;
     save();
-    render();
+    kick();
   });
 
   // Starten/stoppen, wenn der Reiter gewechselt wird, die App in den Hintergrund geht oder die Verbindung kommt.
   new MutationObserver(kick).observe(panel, { attributes: true, attributeFilter: ['hidden'] });
   document.addEventListener('visibilitychange', kick);
   conn.addEventListener('state', (e) => {
+    if (e.detail.state !== 'online') streamKey = ''; // neue Verbindung = neuer Strom
     if (e.detail.state === 'online' && prefs.on) conn.send({ t: 'screen.list' });
     kick();
   });
