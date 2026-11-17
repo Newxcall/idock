@@ -19,6 +19,7 @@ export function initScreen({ panel, conn }) {
   const img = $('#screen-img');
   const msg = $('.screen-msg');
   const diag = $('#screen-diag');
+  const video = $('#screen-video');
 
   const prefs = loadPrefs();
   let screens = [];
@@ -77,6 +78,26 @@ export function initScreen({ panel, conn }) {
   let lastFrameAt = 0;
   let quality = null;   // vom PC gewählte Stufe (Größe, JPEG-Qualität, Ø Bestätigungszeit)
   conn.on('netstat', (m) => { net = m; });
+  let vstat = null;     // Werte vom PC zum Videostrom
+  let vin = null;       // Werte des iPhones zum Videostrom (getStats)
+  let vPrev = null;
+  conn.on('screen.vstat', (m) => { vstat = m; });
+  async function readVideoStats() {
+    const pc = conn.ws && conn.ws.pc;
+    if (!videoMode() || !pc || !pc.getStats) { vin = null; return; }
+    try {
+      const r = await pc.getStats();
+      r.forEach((s) => {
+        if (s.type !== 'inbound-rtp' || (s.kind || s.mediaType) !== 'video') return;
+        const now = s.timestamp;
+        let kbps = 0;
+        if (vPrev && now > vPrev.t) kbps = (s.bytesReceived - vPrev.b) * 8 / (now - vPrev.t);
+        const bufMs = s.jitterBufferEmittedCount ? 1000 * s.jitterBufferDelay / s.jitterBufferEmittedCount : 0;
+        vin = { fps: s.framesPerSecond || 0, w: s.frameWidth || 0, h: s.frameHeight || 0, kbps, lost: s.packetsLost || 0, dropped: s.framesDropped || 0, buf: bufMs, pli: s.pliCount || 0 };
+        vPrev = { t: now, b: s.bytesReceived };
+      });
+    } catch { }
+  }
   function updateDiag() {
     const on = active() && conn.tunneled;
     diag.hidden = !on;
@@ -86,13 +107,21 @@ export function initScreen({ panel, conn }) {
     const n = samples.length;
     const avg = (f) => n ? samples.reduce((a, x) => a + f(x), 0) / n : 0;
     const max = (f) => n ? Math.max(...samples.map(f)) : 0;
-    let line = `Bild ${(n / 3).toFixed(1)}/s · ${avg(x => x.kb).toFixed(1)} KB · Abstand max ${max(x => x.gap).toFixed(0)} ms · PC ${avg(x => x.pcMs).toFixed(0)} ms · Hänger ${stalls}`;
-    if (quality) line += `
+    let line;
+    if (videoMode()) {
+      line = vin ? `Video ${vin.fps.toFixed(0)}/s · ${vin.w}×${vin.h} · ${vin.kbps.toFixed(0)} kbit/s · verloren ${vin.lost} · Puffer ${vin.buf.toFixed(0)} ms` : 'Video startet …';
+      if (vstat) line += `\nPC ${vstat.fps}/s · Ziel ${vstat.target} kbit/s · Verlust ${vstat.loss} % · Schlüsselbilder ${vstat.key} (${vstat.req} erbeten) · Aufnahme ${vstat.cap} ms · Kodieren ${vstat.enc} ms`;
+    } else {
+      line = `Bild ${(n / 3).toFixed(1)}/s · ${avg(x => x.kb).toFixed(1)} KB · Abstand max ${max(x => x.gap).toFixed(0)} ms · PC ${avg(x => x.pcMs).toFixed(0)} ms · Hänger ${stalls}`;
+    }
+    if (quality && !videoMode()) line += `
 Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigung Ø${quality.ack} ms`;
     if (net && net.s) line += `\nLeitung ${net.s.rtt} ms · RTO ${net.s.rto} · Fenster ${net.s.cwnd} KB · offen ${net.s.outKb} KB · Wdh ${net.s.timeouts}+${net.s.fast} · ${net.path || ''}`;
     diag.textContent = line.replace(/(\d)\.(\d)/g, '$1,$2');
   }
-  setInterval(() => {
+  setInterval(async () => {
+    checkVideo();
+    await readVideoStats();
     updateDiag();
     if (active() && conn.tunneled) conn.send({ t: 'netstat' });
   }, 1000);
@@ -127,21 +156,63 @@ Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigu
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.round(Math.min(1920, Math.max(160, view.clientWidth * dpr)));
     const h = Math.round(Math.min(1920, Math.max(120, view.clientHeight * dpr)));
-    return { w, h, z: prefs.zoom, v: 2 };   // v 2 = Bildkopf mit Größe/Qualität/Stufe (20 Bytes)
+    return { w, h, z: prefs.zoom, v: 2, video: wantVideo() };   // v 2 = Bildkopf mit Größe/Qualität/Stufe (20 Bytes)
   }
+
+  // --- Live-Bild als echtes Video (neuere PC-Version): viel schärfer und flüssiger als Einzelbilder. ---
+  let videoFailed = false;     // kam nach dem Start kein Video → zurück zu Einzelbildern
+  let videoAskedAt = 0;
+  const remoteVideo = () => (conn.tunneled && conn.ws && conn.ws.videoStream) || null;
+  const wantVideo = () => !!remoteVideo() && !videoFailed;
+  const videoMode = () => streamKey !== '' && JSON.parse(streamKey).video === true;
+  function attachVideo() {
+    const s = remoteVideo();
+    if (s && video.srcObject !== s) { video.srcObject = s; }
+  }
+  function checkVideo() {
+    videoShown();   // nach Aus/Ein läuft das Video weiter, ohne neue Ereignisse
+    // Video gewünscht, aber nach 5 s noch kein Bild → Einzelbilder (z. B. Netz lässt Video nicht durch).
+    if (videoMode() && !video.videoWidth && videoAskedAt && performance.now() - videoAskedAt > 5000) {
+      videoFailed = true;
+      syncStream();
+    }
+  }
+  function videoShown() {
+    if (!videoMode() || !video.videoWidth) return;
+    view.classList.add('video-on');
+    if (!shown) { shown = true; view.classList.add('ready'); }
+    setMsg('');
+  }
+  video.addEventListener('resize', videoShown);
+  video.addEventListener('playing', videoShown);
+  video.addEventListener('loadeddata', videoShown);
+  conn.addEventListener('video', () => { videoFailed = false; attachVideo(); kick(); });
+  conn.on('screen.at', (m) => {
+    if (m.n !== screens.length) conn.send({ t: 'screen.list' });
+    if (m.i !== current) { current = m.i; render(); }
+  });
+  conn.on('screen.ok', () => setMsg(''));
   function syncStream() {
     const want = active() && conn.tunneled;
     if (want) {
       const p = streamParams();
       const key = JSON.stringify(p);
-      if (key !== streamKey) { conn.send({ t: 'screen.stream', on: true, ...p }); streamKey = key; lastFrameAt = 0; }
+      if (key !== streamKey) {
+        // Wechsel zwischen Video und Einzelbildern: alten Strom erst beenden.
+        if (streamKey && JSON.parse(streamKey).video !== p.video) conn.send({ t: 'screen.stream', on: false });
+        conn.send({ t: 'screen.stream', on: true, ...p });
+        streamKey = key; lastFrameAt = 0;
+        if (p.video) { videoAskedAt = performance.now(); attachVideo(); video.hidden = false; video.play().catch(() => { }); videoShown(); }
+        else { video.hidden = true; view.classList.remove('video-on'); }
+      }
     } else if (streamKey) {
       if (conn.state === 'online') conn.send({ t: 'screen.stream', on: false });
       streamKey = '';
+      video.hidden = true; view.classList.remove('video-on');
     }
   }
   conn.on('screen.frame', ({ buf }) => {
-    if (!streamKey) return;
+    if (!streamKey || videoMode()) return;
     const dv = new DataView(buf);
     const n = dv.getUint32(4);
     conn.send({ t: 'screen.ack', n });
@@ -214,7 +285,7 @@ Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigu
   new MutationObserver(kick).observe(panel, { attributes: true, attributeFilter: ['hidden'] });
   document.addEventListener('visibilitychange', kick);
   conn.addEventListener('state', (e) => {
-    if (e.detail.state !== 'online') streamKey = ''; // neue Verbindung = neuer Strom
+    if (e.detail.state !== 'online') { streamKey = ''; videoFailed = false; video.hidden = true; view.classList.remove('video-on'); } // neue Verbindung = neuer Strom
     if (e.detail.state === 'online' && prefs.on) conn.send({ t: 'screen.list' });
     kick();
   });

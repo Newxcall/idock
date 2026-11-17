@@ -474,6 +474,9 @@ body.kb-open .topbar::before { content: "Tastatur"; flex: 1; font-size: 20px; fo
 .screen-view { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .screen-view img { width: 100%; height: 100%; object-fit: contain; object-position: center top; display: block; opacity: 0; transition: opacity .25s; }
 .screen-view.ready img { opacity: 1; }
+.screen-view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center top; display: block; background: transparent; }
+.screen-view video[hidden] { display: none; }
+.screen-view.video-on img { visibility: hidden; }
 .screen-view:not(.ready)::after {
   content: "Bild wird geladen …"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-size: 14px;
 }
@@ -499,7 +502,7 @@ body.kb-open .topbar::before { content: "Tastatur"; flex: 1; font-size: 20px; fo
   .screen-on .screen-bar { grid-column: 1 / 3; }
   .screen-on .pad { grid-column: 1; grid-row: 2; min-height: 0; }
   .screen-on .pad-buttons { grid-column: 2; grid-row: 2; flex-direction: column; height: auto; }
-  .screen-on .screen-view img { object-position: center; }
+  .screen-on .screen-view img, .screen-on .screen-view video { object-position: center; }
 }
 /* iPhone quer mit Bild: Kopfzeile weg, alle Knöpfe in die rechte Spalte → Bild nutzt die ganze Höhe */
 @media (orientation: landscape) and (max-height: 500px) {

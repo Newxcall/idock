@@ -126,6 +126,7 @@ export class Connection extends EventTarget {
     let opened = false;
     if (viaInternet) {
       ws = new RemoteSocket(this.token);
+      ws.onvideo = () => this.dispatchEvent(new Event('video'));
     } else {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${proto}//${location.host}/ws`);

@@ -170,6 +170,19 @@ export class RemoteSocket {
     // Erst nach der Anmeldung benutzen (fastOk), sonst hält der PC die Bewegung für einen Anmeldeversuch.
     this.fastOk = false;
     try { this.fast = pc.createDataChannel('idock-fast', { ordered: false }); } catch { this.fast = null; }
+    // Live-Bild als echtes Video (VP8): nur empfangen. Ältere PC-Versionen lehnen den Videokanal einfach ab.
+    this.videoStream = null;
+    try {
+      const tr = pc.addTransceiver('video', { direction: 'recvonly' });
+      const caps = window.RTCRtpReceiver && RTCRtpReceiver.getCapabilities && RTCRtpReceiver.getCapabilities('video');
+      const vp8 = caps ? caps.codecs.filter(c => /vp8/i.test(c.mimeType)) : [];
+      if (vp8.length && tr.setCodecPreferences) tr.setCodecPreferences(vp8);
+    } catch { }
+    pc.ontrack = (e) => {
+      try { e.receiver.jitterBufferTarget = 0; } catch { }   // so wenig Verzögerung wie möglich
+      this.videoStream = (e.streams && e.streams[0]) || new MediaStream([e.track]);
+      this.onvideo && this.onvideo();
+    };
     dc.onclose = () => this.fail('closed');
     pc.onicecandidate = (e) => {
       if (!e.candidate) return;
