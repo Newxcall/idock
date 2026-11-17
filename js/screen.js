@@ -75,6 +75,7 @@ export function initScreen({ panel, conn }) {
   let net = null;
   let stalls = 0;     // Pausen > 1 s zwischen zwei Bildern (seit Einschalten)
   let lastFrameAt = 0;
+  let quality = null;   // vom PC gewählte Stufe (Größe, JPEG-Qualität, Ø Bestätigungszeit)
   conn.on('netstat', (m) => { net = m; });
   function updateDiag() {
     const on = active() && conn.tunneled;
@@ -86,6 +87,8 @@ export function initScreen({ panel, conn }) {
     const avg = (f) => n ? samples.reduce((a, x) => a + f(x), 0) / n : 0;
     const max = (f) => n ? Math.max(...samples.map(f)) : 0;
     let line = `Bild ${(n / 3).toFixed(1)}/s · ${avg(x => x.kb).toFixed(1)} KB · Abstand max ${max(x => x.gap).toFixed(0)} ms · PC ${avg(x => x.pcMs).toFixed(0)} ms · Hänger ${stalls}`;
+    if (quality) line += `
+Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigung Ø${quality.ack} ms`;
     if (net && net.s) line += `\nLeitung ${net.s.rtt} ms · RTO ${net.s.rto} · Fenster ${net.s.cwnd} KB · offen ${net.s.outKb} KB · Wdh ${net.s.timeouts}+${net.s.fast} · ${net.path || ''}`;
     diag.textContent = line.replace(/(\d)\.(\d)/g, '$1,$2');
   }
@@ -120,10 +123,11 @@ export function initScreen({ panel, conn }) {
   // --- Über das Internet: der PC schickt die Bilder von selbst (Strom), das iPhone bestätigt jedes. ---
   let streamKey = '';   // zuletzt gesendete Einstellungen ('' = Strom aus)
   function streamParams() {
-    // Einfache statt doppelte Pixeldichte und stärker komprimiert – etwa ein Viertel der Daten.
-    const w = Math.round(Math.min(1920, Math.max(160, view.clientWidth)));
-    const h = Math.round(Math.min(1920, Math.max(120, view.clientHeight)));
-    return { w, h, z: prefs.zoom, q: 45 };
+    // Größe in Gerätepixeln (volle Schärfe). Wie viel davon tatsächlich kommt, passt der PC der Leitung an.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(Math.min(1920, Math.max(160, view.clientWidth * dpr)));
+    const h = Math.round(Math.min(1920, Math.max(120, view.clientHeight * dpr)));
+    return { w, h, z: prefs.zoom };
   }
   function syncStream() {
     const want = active() && conn.tunneled;
@@ -145,8 +149,10 @@ export function initScreen({ panel, conn }) {
     const gap = lastFrameAt ? now - lastFrameAt : 0;
     if (gap > 1000) stalls++;
     lastFrameAt = now;
-    const blob = new Blob([new Uint8Array(buf, 12)], { type: 'image/jpeg' });
+    const head = buf.byteLength >= 20 ? 20 : 12;
+    const blob = new Blob([new Uint8Array(buf, head)], { type: 'image/jpeg' });
     samples.push({ at: now, gap, kb: blob.size / 1024, pcMs: dv.getUint16(10) });
+    if (head === 20) quality = { w: dv.getUint16(12), h: dv.getUint16(14), q: dv.getUint8(16), level: dv.getUint8(17), ack: dv.getUint16(18) };
     show({ blob, idx: dv.getUint8(8), count: dv.getUint8(9) });
   });
   conn.on('screen.err', () => setMsg('Der Bildschirm ist gerade gesperrt oder geschützt (z. B. Sperrbildschirm oder Windows-Sicherheitsabfrage).'));
