@@ -17,6 +17,7 @@ export function initScreen({ panel, conn }) {
   const view = $('#screen-view');
   const img = $('#screen-img');
   const msg = $('.screen-msg');
+  const diag = $('#screen-diag');
 
   const prefs = loadPrefs();
   let screens = [];
@@ -73,6 +74,30 @@ export function initScreen({ panel, conn }) {
   let seq = 0;
   let shownSeq = 0;
 
+  // Technikzeile (nur über das Internet): Messwerte der letzten 3 Sekunden + Werte vom PC.
+  let samples = [];   // { at, ms, kb, pcMs, shown }
+  let net = null;
+  let stalls = 0;     // Bilder, die länger als 1 s gebraucht haben (seit Einschalten)
+  conn.on('netstat', (m) => { net = m; });
+  function updateDiag() {
+    const on = active() && conn.tunneled;
+    diag.hidden = !on;
+    if (!on) return;
+    const now = performance.now();
+    samples = samples.filter(s => now - s.at < 3000);
+    const n = samples.length;
+    const avg = (f) => n ? samples.reduce((a, s) => a + f(s), 0) / n : 0;
+    const max = (f) => n ? Math.max(...samples.map(f)) : 0;
+    const shownCount = samples.filter(s => s.shown).length;
+    let line = `Bild ${(shownCount / 3).toFixed(1)}/s · ${avg(s => s.kb).toFixed(1)} KB · Abruf Ø${avg(s => s.ms).toFixed(0)} max ${max(s => s.ms).toFixed(0)} ms · PC ${avg(s => s.pcMs).toFixed(0)} ms · Hänger ${stalls}`;
+    if (net && net.s) line += `\nLeitung ${net.s.rtt} ms · RTO ${net.s.rto} · Fenster ${net.s.cwnd} KB · offen ${net.s.outKb} KB · Wdh ${net.s.timeouts}+${net.s.fast} · ${net.path || ''}`;
+    diag.textContent = line.replace(/(\d)\.(\d)/g, '$1,$2');
+  }
+  setInterval(() => {
+    updateDiag();
+    if (active() && conn.tunneled) conn.send({ t: 'netstat' });
+  }, 1000);
+
   async function worker(depth) {
     const minGap = (1000 / MAX_FPS) * depth;
     while (active()) {
@@ -94,6 +119,9 @@ export function initScreen({ panel, conn }) {
         const idx = +(res.headers.get('X-Screen-Index') ?? 0);
         const count = +(res.headers.get('X-Screen-Count') ?? 1);
         const blob = await res.blob();
+        const took = performance.now() - t0;
+        if (took > 1000) stalls++;
+        samples.push({ at: performance.now(), ms: took, kb: blob.size / 1024, pcMs: +(res.headers.get('X-Frame-Ms') ?? 0), shown: mine > shownSeq });
         if (mine > shownSeq) {
           shownSeq = mine;
           const url = URL.createObjectURL(blob);
