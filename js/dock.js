@@ -1,3 +1,4 @@
+import { closeSheet } from './sheets.js';
 // Dock: App-Raster wie am iPhone-Home-Bildschirm. Antippen startet die App am PC.
 // Bearbeiten: wackelnde Icons, „−“ entfernt, ziehen sortiert um (an den Rand ziehen = andere Seite),
 // „+ App“ fügt hinzu, „+ Seite“ legt eine neue Seite an, eigener Hintergrund.
@@ -315,8 +316,8 @@ export function initDock({ root, conn, toast }) {
       conn.send({ t: 'apps.list' });
     } else renderAppList();
   });
-  document.querySelector('#apps-done').addEventListener('click', () => { appsSheet.hidden = true; });
-  appsSheet.addEventListener('click', (e) => { if (e.target === appsSheet) appsSheet.hidden = true; });
+  document.querySelector('#apps-done').addEventListener('click', () => closeSheet(appsSheet));
+  appsSheet.addEventListener('click', (e) => { if (e.target === appsSheet) closeSheet(appsSheet); });
   appsSearch.addEventListener('input', renderAppList);
   document.querySelector('#apps-refresh').addEventListener('click', () => {
     apps = null;
@@ -360,8 +361,8 @@ export function initDock({ root, conn, toast }) {
     wallSheet.querySelector('#wall-remove').hidden = !dock?.wallpaper;
     wallSheet.hidden = false;
   });
-  wallSheet.querySelector('#wall-cancel').addEventListener('click', () => { wallSheet.hidden = true; });
-  wallSheet.addEventListener('click', (e) => { if (e.target === wallSheet) wallSheet.hidden = true; });
+  wallSheet.querySelector('#wall-cancel').addEventListener('click', () => closeSheet(wallSheet));
+  wallSheet.addEventListener('click', (e) => { if (e.target === wallSheet) closeSheet(wallSheet); });
   wallSheet.querySelector('#wall-pick').addEventListener('click', () => { wallSheet.hidden = true; fileInput.click(); });
   wallSheet.querySelector('#wall-remove').addEventListener('click', async () => {
     wallSheet.hidden = true;

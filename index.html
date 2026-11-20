@@ -10,12 +10,12 @@
   <meta name="theme-color" content="#000000">
   <meta name="format-detection" content="telephone=no">
   <meta name="idock-hosted" content="1">
-  <meta name="idock-build" content="9896f8e395">
+  <meta name="idock-build" content="edfdc9c1fe">
   <title>iDock</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/png" href="icon-32.png">
-  <link rel="stylesheet" href="css/app.css?v=9896f8e395">
+  <link rel="stylesheet" href="css/app.css?v=edfdc9c1fe">
 </head>
 <body>
 
@@ -77,12 +77,60 @@
           <h3 id="home-title">Verbinde mit dem PC …</h3>
           <p class="dim" id="home-sub">Einen Moment.</p>
         </div>
-        <div class="card">
-          <h4>So geht es weiter</h4>
-          <p class="dim"><b>Touchpad</b> – Maus steuern, mit „Bildschirm“ siehst du den PC live. <b>Tastatur</b> – tippen und Tastenkürzel.
-          <b>Dock</b> – Programme starten. <b>Medien</b> – Musik, Lautstärke, Helligkeit. Einstellungen und „App aktualisieren“ findest du über das Zahnrad.
-          <b>Ablage</b> – Text zwischen iPhone und PC kopieren.</p>
-        </div>
+        <details class="card guide" id="guide" open>
+          <summary><h4>Anleitung</h4><span class="guide-chev" aria-hidden="true"></span></summary>
+          <div class="guide-body">
+            <section>
+              <h5>Touchpad</h5>
+              <ul>
+                <li><b>1 Finger bewegen</b> – Maus bewegen</li>
+                <li><b>Tippen</b> – Linksklick, 2× tippen = Doppelklick</li>
+                <li><b>2 Finger bewegen</b> – scrollen</li>
+                <li><b>2 Finger tippen</b> – Rechtsklick, 3 Finger = Mittelklick</li>
+                <li><b>Lange drücken, dann bewegen</b> – ziehen (Fenster, Dateien)</li>
+                <li><b>Links / Rechts</b> halten – Maustaste gedrückt halten</li>
+              </ul>
+            </section>
+            <section>
+              <h5>Bildschirm live</h5>
+              <ul>
+                <li>Im Touchpad auf <b>Bildschirm</b> (Monitor-Symbol) tippen – du wischst direkt auf dem Bild</li>
+                <li><b>1× – 4×</b> vergrößert den Bereich um den Mauszeiger</li>
+                <li><b>1 / 2</b> wechselt den Bildschirm</li>
+              </ul>
+            </section>
+            <section>
+              <h5>Tastatur</h5>
+              <ul>
+                <li>Oben ins Feld tippen – alles erscheint sofort am PC</li>
+                <li><b>Strg, Alt, ⇧, Win</b>: 1× = für die nächste Taste, 2× = festhalten</li>
+                <li>Unten: Tastenkürzel wie Kopieren, Einfügen, Fenster wechseln</li>
+              </ul>
+            </section>
+            <section>
+              <h5>Dock</h5>
+              <ul>
+                <li>App antippen – startet am PC</li>
+                <li><b>Bearbeiten</b> oder lange drücken: <b>+ App</b>, <b>+ Seite</b>, Hintergrund, ziehen zum Sortieren</li>
+              </ul>
+            </section>
+            <section>
+              <h5>Medien &amp; Ablage</h5>
+              <ul>
+                <li><b>Medien</b>: Abspielen, Lautstärke, Helligkeit</li>
+                <li><b>Ablage</b>: Text vom PC aufs iPhone und zurück</li>
+              </ul>
+            </section>
+            <section>
+              <h5>Einstellungen</h5>
+              <ul>
+                <li><b>Zahnrad</b> oben rechts: Touchpad-Tempo, Leistungsanzeige, App aktualisieren</li>
+                <li>Fenster wie dieses schließt du, indem du sie <b>nach unten wischst</b></li>
+                <li>Unterwegs verbindet sich iDock über das Internet</li>
+              </ul>
+            </section>
+          </div>
+        </details>
       </div>
       <div class="panel panel-touchpad" data-panel="touchpad" id="touchpad" hidden>
         <div class="screen-bar">
@@ -264,6 +312,11 @@
         <label class="row"><span>Tippen zum Klicken</span><input id="tp-tap" type="checkbox" class="switch"></label>
       </div>
       <button id="tp-reset" class="btn small subtle">Touchpad zurücksetzen</button>
+      <p class="section-title">Live-Bild</p>
+      <div class="list">
+        <label class="row"><span>Leistungsanzeige</span><input id="set-diag" type="checkbox" class="switch"></label>
+      </div>
+      <p class="update-note dim">Zeigt unterwegs oben im Live-Bild Bildrate, Schärfe und Verbindung an (grüne Schrift, für die Fehlersuche).</p>
       <p class="section-title">Verbindung</p>
       <div class="list">
         <div class="row"><span>PC</span><span id="set-pc" class="dim">–</span></div>
@@ -314,7 +367,7 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="js/app.js?v=9896f8e395"></script>
+  <script type="module" src="js/app.js?v=edfdc9c1fe"></script>
   <div id="boot-fail" class="boot-fail" hidden>
     <p><b>iDock startet nicht.</b></p>
     <p id="boot-err" class="dim"></p>

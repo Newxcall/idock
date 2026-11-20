@@ -99,8 +99,21 @@ export function initScreen({ panel, conn }) {
       });
     } catch { }
   }
+  // Leistungsanzeige an/aus (Einstellungen → Live-Bild), Standard: aus.
+  const DIAG_KEY = 'idock.diag';
+  let diagWanted = false;
+  try { diagWanted = localStorage.getItem(DIAG_KEY) === '1'; } catch { }
+  const diagBox = document.querySelector('#set-diag');
+  if (diagBox) {
+    diagBox.checked = diagWanted;
+    diagBox.addEventListener('change', () => {
+      diagWanted = diagBox.checked;
+      try { localStorage.setItem(DIAG_KEY, diagWanted ? '1' : '0'); } catch { }
+      updateDiag();
+    });
+  }
   function updateDiag() {
-    const on = active() && conn.tunneled;
+    const on = diagWanted && active() && conn.tunneled;
     diag.hidden = !on;
     if (!on) return;
     const now = performance.now();
@@ -122,9 +135,9 @@ Stufe ${quality.level} · ${quality.w}×${quality.h} q${quality.q} · Bestätigu
   }
   setInterval(async () => {
     checkVideo();
-    await readVideoStats();
+    if (diagWanted) await readVideoStats();
     updateDiag();
-    if (active() && conn.tunneled) conn.send({ t: 'netstat' });
+    if (diagWanted && active() && conn.tunneled) conn.send({ t: 'netstat' });
   }, 1000);
 
   // Bild anzeigen: immer nur das neueste; während eins dekodiert wird, wartet höchstens eins.

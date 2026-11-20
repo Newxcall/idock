@@ -7,6 +7,7 @@ import { initDock } from './dock.js';
 import { initMedia } from './media.js';
 import { initScreen } from './screen.js';
 import { initClipboard } from './clipboard.js';
+import { initSheets, closeSheet } from './sheets.js';
 
 const $ = (sel) => document.querySelector(sel);
 const conn = new Connection();
@@ -214,6 +215,17 @@ function toast(text) {
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2600);
 }
 
+/* ---------------- Abo-Hinweis (Funktion ohne Abo gesperrt) ---------------- */
+
+const proShown = new Map();
+conn.on('pro', (msg) => {
+  const what = msg.what || 'Diese Funktion';
+  const last = proShown.get(what) || 0;
+  if (Date.now() - last < 15000) return; // nicht bei jedem Befehl erneut melden
+  proShown.set(what, Date.now());
+  toast(`${what} gibt es mit dem iDock-Abo – am PC: iDock-Symbol → Abo`);
+});
+
 /* ---------------- Dock ---------------- */
 
 initDock({ root: $('#dock'), conn, toast });
@@ -324,8 +336,16 @@ $('#settings-btn').addEventListener('click', () => {
   $('#set-version').textContent = (conn.info.version || '–') + (PAGE_BUILD && !PAGE_BUILD.startsWith('__') ? ` (${PAGE_BUILD.slice(0, 6)})` : '');
   sheet.hidden = false;
 });
-$('#sheet-close').addEventListener('click', () => { sheet.hidden = true; });
-sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.hidden = true; });
+$('#sheet-close').addEventListener('click', () => closeSheet(sheet));
+sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(sheet); });
+initSheets();
+
+// Anleitung auf der Startseite: auf- oder zugeklappt merken.
+{
+  const guide = $('#guide');
+  try { if (localStorage.getItem('idock.guide') === 'closed') guide.open = false; } catch { }
+  guide.addEventListener('toggle', () => { try { localStorage.setItem('idock.guide', guide.open ? 'open' : 'closed'); } catch { } });
+}
 $('#set-remote').addEventListener('change', (e) => {
   setRemoteMode(e.target.checked);
   reloadApp();
